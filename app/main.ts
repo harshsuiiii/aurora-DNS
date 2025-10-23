@@ -3,7 +3,7 @@ import DNSHeader, { TDNSHeader } from "./dns/header.ts";
 
 const defaultheader: TDNSHeader = {
     id: 1234,
-    qr: 1,
+    qr: 1 << 15,
     opcode: OPCODE.STANDARD_QUERY,
     aa: 0,
     tc: 0,

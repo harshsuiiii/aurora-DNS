@@ -45,12 +45,12 @@ class DNSHeader {
             values.z |
             values.rcode;
 
-        header.writeUInt32BE(values.id, 0);
-        header.writeUInt32BE(flags, 2);
-        header.writeUInt32BE(values.qdcount, 4);
-        header.writeUInt32BE(values.ancount, 6);
-        header.writeUInt32BE(values.nscount, 8);
-        header.writeUInt32BE(values.arcount, 10);
+        header.writeUInt16BE(values.id, 0);
+        header.writeUInt16BE(flags, 2);
+        header.writeUInt16BE(values.qdcount, 4);
+        header.writeUInt16BE(values.ancount, 6);
+        header.writeUInt16BE(values.nscount, 8);
+        header.writeUInt16BE(values.arcount, 10);
 
         return header;
     }
