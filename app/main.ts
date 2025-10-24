@@ -17,6 +17,12 @@ const defaultheader: TDNSHeader = {
     arcount: 0,
 };
 
+const defaultQuestion = {
+    name: 'codecrafters.io',
+    ClassCode: DNSClass.IN,
+    type: DNSQuestionType.A,
+};
+
 const udpSocket: dgram.Socket = dgram.createSocket("udp4");
 udpSocket.bind(2053, "127.0.0.1");
 
@@ -24,10 +30,10 @@ udpSocket.bind(2053, "127.0.0.1");
 udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
     try {
         console.log(`Received data from ${remoteAddr.address}:${remoteAddr.port}`);
-        const header = DNSHeader.write(defaultheader);
+        const header = DNSHeader.write({...defaultheader, qdcount: 1});
+        const question = DNSQuestion.write([defaultQuestion]); 
 
-
-        const response = header; // In a real implementation, you'd append question and answer sections here.   
+        const response = ArrayBuffer.concat([header, question]); // In a real implementation, you'd append question and answer sections here.   
         udpSocket.send(response, remoteAddr.port, remoteAddr.address);
     } catch (e) {
         console.log(`Error sending data: ${e}`);
