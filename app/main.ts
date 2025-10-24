@@ -26,18 +26,34 @@ const defaultQuestion = {
 };
 
 const udpSocket: dgram.Socket = dgram.createSocket("udp4");
-udpSocket.bind(2053, "127.0.0.1");
+udpSocket.bind(2053, "127.0.0.1", () => {
+    console.log("🚀 DNS Server listening on 127.0.0.1:2053");
+});
 
 
 udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
     try {
-        console.log(`Received data from ${remoteAddr.address}:${remoteAddr.port}`);
+        console.log(`📨 Received ${data.length} bytes from ${remoteAddr.address}:${remoteAddr.port}`);
         const header = DNSHeader.write({...defaultheader, qdcount: 1});
         const question = DNSQuestion.write([defaultQuestion]); 
 
         const response = Buffer.concat([header, question]);   
-        udpSocket.send(response, remoteAddr.port, remoteAddr.address);
+        console.log(`📤 Sending ${response.length} bytes response`);
+        
+        udpSocket.send(response, remoteAddr.port, remoteAddr.address, (err) => {
+            if (err) {
+                console.error(`❌ Failed to send response: ${err}`);
+            } else {
+                console.log(`✅ Response sent successfully`);
+            }
+        });
     } catch (e) {
-        console.log(`Error sending data: ${e}`);
+        console.error(`⚠️ Error processing request: ${e}`);
     }
+});
+
+// Add error handler
+udpSocket.on("error", (error) => {
+    console.error(`🔥 Server error: ${error}`);
+    udpSocket.close();
 });
