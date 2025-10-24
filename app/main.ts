@@ -1,5 +1,7 @@
 import * as dgram from "dgram";
-import DNSHeader, { TDNSHeader } from "./dns/header.ts";
+import DNSHeader, { TDNSHeader } from "./dns/header";
+import DNSQuestion, { TDNSQuestion } from "./dns/question";
+import { OPCODE, ResponseCode, DNSClass, DNSQuestionType } from "./dns/types";
 
 const defaultheader: TDNSHeader = {
     id: 1234,
@@ -33,7 +35,7 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         const header = DNSHeader.write({...defaultheader, qdcount: 1});
         const question = DNSQuestion.write([defaultQuestion]); 
 
-        const response = ArrayBuffer.concat([header, question]); // In a real implementation, you'd append question and answer sections here.   
+        const response = Buffer.concat([header, question]);   
         udpSocket.send(response, remoteAddr.port, remoteAddr.address);
     } catch (e) {
         console.log(`Error sending data: ${e}`);

@@ -1,37 +1,31 @@
-export enum DNSQuestionType {
-    A = 1,
-    NS = 2,
-}
+import { DNSClass, DNSQuestionType } from './types';
 
-export enum DNSClass {
-    IN = 1,
-     
-}
+export type TDNSQuestion = {
+    name: string;
+    type: DNSQuestionType;
+    ClassCode: DNSClass;
+};
 
-export interface IDNSQuestion {
-    qname: string;
-    qtype: DNSQuestionType;
-    classCode: number;
-}
+export default class DNSQuestion {
+    static write(questions: TDNSQuestion[]): Buffer {
+        const buffers: Buffer[] = [];
+        
+        for (const q of questions) {
+            // Convert domain name to DNS format
+            const nameParts = q.name.split('.');
+            for (const part of nameParts) {
+                buffers.push(Buffer.from([part.length]));
+                buffers.push(Buffer.from(part));
+            }
+            buffers.push(Buffer.from([0])); // terminating byte
 
-class DNSQuestion {
-    static write(values: IDNSQuestion[]){
-        return Buffer.concat(
-            question.map((question) => {
-                const { name, type, classCode } = question;
-                const str = name
-                    .split('.')
-                    .map((part) => `${String.fromCharCode(name.length)}${n}`)
-                    .join("");
+            // Add type and class
+            const typeClass = Buffer.alloc(4);
+            typeClass.writeUInt16BE(q.type, 0);
+            typeClass.writeUInt16BE(q.ClassCode, 2);
+            buffers.push(typeClass);
+        }
 
-                    const typeAndClass = ArrayBuffer.alloc(4);
-                    typeAndClass.writeUInt16BE(type);
-                    typeAndClass.writeUInt16BE(classCode, 2);
-
-                    return Buffer.concat([ArrayBuffer.from(str + "\0", "binary"), typeAndClass]);
-            })
-        );
+        return Buffer.concat(buffers);
     }
 }
-
-export default DNSQuestion;
