@@ -5,33 +5,47 @@ import DNSAnswer from "./dns/answer.ts";
 
 const LOCAL_PORT = 2053;
 const LOCAL_HOST = "127.0.0.1";
-const UPSTREAM_DNS = "8.8.8.8"; // Google DNS
-const UPSTREAM_PORT = 53;
+
+// Multiple upstream resolvers (primary → fallback)
+const UPSTREAMS = [
+  { host: "8.8.8.8", port: 53, name: "GoogleDNS" },
+  { host: "1.1.1.1", port: 53, name: "CloudflareDNS" },
+];
 
 const udpSocket: dgram.Socket = dgram.createSocket("udp4");
 const upstreamSocket: dgram.Socket = dgram.createSocket("udp4");
 
-// ✅ TTL-aware cache by (name|type|class)
+// TTL-aware cache by (name|type|class)
 const cache: Record<string, { buffer: Buffer; expiresAt: number }> = {};
 
-// ✅ Utility: Build cache key
+// Utility: Build cache key
 const getCacheKey = (name: string, type: number, classCode: number): string =>
   `${name.toLowerCase()}|${type}|${classCode}`;
 
-// ✅ Utility: Send UDP packets as a promise
+// ✅ Utility: Send UDP packet (Promise-based)
 const sendUDP = (socket: dgram.Socket, message: Buffer, port: number, host: string): Promise<void> =>
   new Promise((resolve, reject) => {
     socket.send(message, port, host, (err) => (err ? reject(err) : resolve()));
   });
 
-// ✅ Start local DNS forwarding server
+// Promise-based listener with timeout
+const waitForMessage = (socket: dgram.Socket, timeoutMs: number): Promise<Buffer> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("⏰ Upstream timeout")), timeoutMs);
+    socket.once("message", (msg) => {
+      clearTimeout(timer);
+      resolve(msg);
+    });
+  });
+
+// Start local DNS forwarding server
 udpSocket.bind(LOCAL_PORT, LOCAL_HOST, () => {
-  console.log(`🚀 DNS Forwarding Server with TTL-aware Cache running on ${LOCAL_HOST}:${LOCAL_PORT}`);
+  console.log(`🚀 DNS Forwarding Server with Failover + TTL Cache running on ${LOCAL_HOST}:${LOCAL_PORT}`);
 });
 
+// Handle incoming queries
 udpSocket.on("message", async (queryBuffer: Buffer, remoteAddr: dgram.RemoteInfo) => {
   try {
-    // Parse the incoming DNS query
     const parsedHeader = DNSHeader.parse(queryBuffer);
     const { questions } = DNSQuestion.parse(queryBuffer, 12);
     if (questions.length === 0) return;
@@ -42,7 +56,7 @@ udpSocket.on("message", async (queryBuffer: Buffer, remoteAddr: dgram.RemoteInfo
 
     console.log(`📩 Received query for ${cacheKey} from ${remoteAddr.address}:${remoteAddr.port}`);
 
-    // ✅ 1️⃣ Check cache for existing entry
+    // Check cache
     const cached = cache[cacheKey];
     if (cached && cached.expiresAt > now) {
       console.log(`⚡ Cache HIT for ${cacheKey} (TTL remaining: ${(cached.expiresAt - now) / 1000}s)`);
@@ -50,44 +64,51 @@ udpSocket.on("message", async (queryBuffer: Buffer, remoteAddr: dgram.RemoteInfo
       return;
     }
 
-    console.log(`🛰️ Cache MISS for ${cacheKey} → forwarding to ${UPSTREAM_DNS}`);
+    console.log(`🛰️ Cache MISS for ${cacheKey} → trying upstream resolvers...`);
 
-    // ✅ 2️⃣ Forward query to upstream resolver
-    await sendUDP(upstreamSocket, queryBuffer, UPSTREAM_PORT, UPSTREAM_DNS);
+    //  Try upstream resolvers in order
+    let response: Buffer | null = null;
+    for (const upstream of UPSTREAMS) {
+      console.log(`🌐 Trying ${upstream.name} (${upstream.host}:${upstream.port})`);
+      try {
+        await sendUDP(upstreamSocket, queryBuffer, upstream.port, upstream.host);
+        response = await waitForMessage(upstreamSocket, 1500); // 1.5s timeout
+        console.log(`✅ Response received from ${upstream.name}`);
+        break;
+      } catch (err) {
+        console.warn(`⚠️ ${upstream.name} failed (${(err as Error).message})`);
+      }
+    }
 
-    // ✅ 3️⃣ Wait for upstream response
-    upstreamSocket.once("message", async (upstreamResponse: Buffer) => {
-      console.log(`⬅️ Received response from ${UPSTREAM_DNS}`);
+    // If all resolvers failed
+    if (!response) {
+      console.error(`❌ All upstream resolvers failed for ${cacheKey}`);
+      return;
+    }
 
-      // Parse upstream DNS response for debugging/logging
-      const header = DNSHeader.parse(upstreamResponse);
-      const { questions, bytesRead } = DNSQuestion.parse(upstreamResponse, 12);
-      const { answers } = DNSAnswer.parse(upstreamResponse, 12 + bytesRead);
+    // Parse upstream response for logging
+    const header = DNSHeader.parse(response);
+    const { questions, bytesRead } = DNSQuestion.parse(response, 12);
+    const { answers } = DNSAnswer.parse(response, 12 + bytesRead);
 
-      console.log("📬 Upstream Header:", header);
-      console.log("💡 Answers:", answers);
+    console.log("📬 Upstream Header:", header);
+    console.log("💡 Answers:", answers);
 
-      // ✅ 4️⃣ Extract TTL from first answer
-      let ttl = 60;
-      if (answers.length > 0 && answers[0].ttl) ttl = answers[0].ttl;
+    // Cache response with TTL
+    let ttl = 60;
+    if (answers.length > 0 && answers[0].ttl) ttl = answers[0].ttl;
+    cache[cacheKey] = { buffer: response, expiresAt: now + ttl * 1000 };
+    console.log(`💾 Cached ${cacheKey} for ${ttl}s`);
 
-      // ✅ 5️⃣ Cache the upstream response using tuple key
-      cache[cacheKey] = {
-        buffer: upstreamResponse,
-        expiresAt: now + ttl * 1000,
-      };
-      console.log(`💾 Cached ${cacheKey} for ${ttl}s`);
-
-      // ✅ 6️⃣ Send response back to the original client
-      await sendUDP(udpSocket, upstreamResponse, remoteAddr.port, remoteAddr.address);
-      console.log(`✅ Forwarded response for ${cacheKey} to ${remoteAddr.address}:${remoteAddr.port}\n`);
-    });
+    // Send response to client
+    await sendUDP(udpSocket, response, remoteAddr.port, remoteAddr.address);
+    console.log(`✅ Forwarded response for ${cacheKey} to ${remoteAddr.address}:${remoteAddr.port}\n`);
   } catch (err) {
     console.error("❌ Error processing DNS request:", err);
   }
 });
 
-// ✅ Periodically clean expired cache entries
+// Periodic cache cleanup
 setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of Object.entries(cache)) {
@@ -98,7 +119,7 @@ setInterval(() => {
   }
 }, 60_000);
 
-// ✅ Error handling
+//  Error handling
 udpSocket.on("error", (err) => {
   console.error("💥 Local server error:", err);
   udpSocket.close();
