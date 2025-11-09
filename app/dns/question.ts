@@ -8,7 +8,7 @@ export type TDNSQuestion = {
 
 export default class DNSQuestion {
   /**
-   * ✅ Parse DNS Question section (handles compression)
+   *  Parse DNS Question section (handles compression)
    */
   static parse(buffer: Buffer, offset: number = 12): { questions: TDNSQuestion[]; bytesRead: number } {
     const questions: TDNSQuestion[] = [];
@@ -30,7 +30,7 @@ export default class DNSQuestion {
   }
 
   /**
-   * ✅ Reads a domain name from a DNS message
+   *  Reads a domain name from a DNS message
    * Supports normal labels and compression (0xC0 pointers)
    */
   static readDomainName(buffer: Buffer, offset: number): { name: string; bytesRead: number } {
@@ -72,7 +72,7 @@ export default class DNSQuestion {
   }
 
   /**
-   * ✅ Write DNS Question section (no compression used when writing)
+   *  Write DNS Question section (no compression used when writing)
    */
   static write(questions: TDNSQuestion[]): Buffer {
     const buffers: Buffer[] = [];

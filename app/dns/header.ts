@@ -17,7 +17,7 @@ export type TDNSHeader = {
 };
 
 export default class DNSHeader {
-  // ✅ Parse header from received DNS query buffer
+  //  Parse header from received DNS query buffer
   static parse(buffer: Buffer): TDNSHeader {
     const id = buffer.readUInt16BE(0);
     const flags = buffer.readUInt16BE(2);
