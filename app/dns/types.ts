@@ -20,7 +20,7 @@ export enum DNSClass {
     HS = 4
 }
 
-export enum DNSQuestionType {
+export enum DNSType {
     A = 1,
     NS = 2,
     CNAME = 5,
